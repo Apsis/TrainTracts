@@ -1,26 +1,14 @@
-# This program is free software; you can redistribute it and/or modify
-# it under the terms of the GNU General Public License as published by
-# the Free Software Foundation; either version 3 of the License, or
-# (at your option) any later version.
-#
-# This program is distributed in the hope that it will be useful, but
-# WITHOUT ANY WARRANTY; without even the implied warranty of
-# MERCHANTIBILITY or FITNESS FOR A PARTICULAR PURPOSE. See the GNU
-# General Public License for more details.
-#
-# You should have received a copy of the GNU General Public License
-# along with this program. If not, see <http://www.gnu.org/licenses/>.
-
+# Blender API imports
 import bpy
-import os
-
 from bpy.props import StringProperty, BoolProperty, IntProperty
 from bpy_extras.io_utils import ImportHelper
 from bpy.types import Operator
 
+# Importing the TCK file reader
 from . import readtck
 
 
+# TrainTracts Blender addon info
 bl_info = {
     "name" : "TrainTracts",
     "description": "An addon for the import and translation of brain tractography .TCK files into 3D objects.",
@@ -28,48 +16,53 @@ bl_info = {
     "blender" : (3, 0, 0),
     "version" : (1, 0, 0),
     "location": "File > Import",
-    "category": "Import-Export"
+    "category": "Import Export"
 }
 
 
 def create_tract(ob_name, coords, edges=[], faces=[]):
-    """Create point cloud object based on given coordinates and name.
+    '''
+    Function for creating a new mesh from tract data
+    Takes in object name, coordinates in format [(X1, Y1, Z1), (X2, Y2, Z2), ...],
+    list of edges in format [[vert1, vert2], [vert2, vert3], ...], and list of faces
+    in format [[vert1, vert2, vert3], ...] (No faces are used in TrainTracts plugin)
+    '''
 
-    Keyword arguments:
-    ob_name -- new object name
-    coords -- float triplets eg: [(-1.0, 1.0, 0.0), (-1.0, -1.0, 0.0)]
-    """
+    # Create instance of mesh and object
+    mesh = bpy.data.meshes.new(ob_name + "Mesh")
+    obj = bpy.data.objects.new(ob_name, mesh)
 
-    # Create new mesh and a new object
-    me = bpy.data.meshes.new(ob_name + "Mesh")
-    ob = bpy.data.objects.new(ob_name, me)
+    # Make the tractography mesh from a list of vertices/edges
+    mesh.from_pydata(coords, edges, faces)
 
-    # Make a mesh from a list of vertices/edges/faces
-    me.from_pydata(coords, edges, faces)
-
-    # Display name and update the mesh
-    ob.show_name = True
-    me.update()
-    return ob
+    # Don't display name and update the mesh in Blender
+    obj.show_name = False
+    mesh.update()
+    return obj
 
 
 class OpenTCKFile(Operator, ImportHelper):
 
+    # Plugin operator info and label for the menu
     bl_idname = "test.open_tck"
     bl_label = "Tractography (.tck)"
     bl_icon = 'SYSTEM'
     
+    # File filtering property in the file picker
     filter_glob: StringProperty(
         default='*.tck',
         options={'HIDDEN'}
     )
     
+    # Property for setting import as verbose
     is_verbose: BoolProperty(
         name='Verbose',
         description='Make file import verbose.',
         default=False,
     )
 
+    # Property for decimating the mesh by removing tracts
+    # (1/decimate of the tracts will be used in the mesh)
     decimate: IntProperty(
         name='Decimate Factor',
         description='Decimate tracts by 1/value (2 = half of tracks).',
@@ -79,10 +72,12 @@ class OpenTCKFile(Operator, ImportHelper):
     )
 
     def execute(self, context):
-        """Do something with the selected file(s)."""
+        # Method to actually open the file, get the data, and make the mesh!
         
+        # Open the file and extract the header and tracts
         header, tracts = readtck.readTCK(self.filepath, verbose=self.is_verbose)
 
+        # If verbose then extract the tract count for progress messages
         if self.is_verbose:
             t_count = str()
             for char in header['count']:
@@ -91,21 +86,24 @@ class OpenTCKFile(Operator, ImportHelper):
             t_count = int(int(t_count)/self.decimate)
             print('Header reading complete and file data open...')
         
+        # Define some important variables
         c_count = 0
-
         pydata = list()
         edgedata = list()
 
+        # Iterate through the tracts and decimate if needed
         for a in range(0, len(tracts), self.decimate):
 
+            # Set current tract and iterate count
             tract = tracts[a]
-
             c_count += 1
 
+            # Some more talkative code with progress included...
             if self.is_verbose and c_count % 10000 == 1:
                 print(str((c_count/t_count)*100)+'%', 'of tracts prepared...')
 
-
+            # Some code that generates a list of edges within but not between tracts!
+            # This will likely be the most underapreciated optimization in the code...
             p_index = len(pydata)
             pydata += tract
 
@@ -113,26 +111,29 @@ class OpenTCKFile(Operator, ImportHelper):
                 edgedata.append([p_index, p_index+1])
                 p_index += 1
 
-        # Create the object
+        # Create the mesh from the vertices and edges
         tract_obj = create_tract("tracts", pydata, edges=edgedata)
         
         # Link object to the active collection
         bpy.context.collection.objects.link(tract_obj)
-        # bpy.ops.object.convert('CURVE')
         
+        # Finish the execution and send the finished message!
         return {'FINISHED'}
 
+
+# Get the plugin akk setup as an operator
 def custom_draw(self, context):
     self.layout.operator("test.open_tck")
 
+# Register the plugin and display it in the file import menu
 def register():
     bpy.utils.register_class(OpenTCKFile)
     bpy.types.TOPBAR_MT_file_import.append(custom_draw)
 
-
+# Unregister the plugin if needed
 def unregister():
     bpy.utils.unregister_class(OpenTCKFile)
 
-
+# Start it all up when loaded!
 if __name__ == "__main__":
     register()
