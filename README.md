@@ -2,6 +2,8 @@
 
 #### _Import .TCK Files to Blender with Ease!_
 
+[![DOI](https://zenodo.org/badge/461224451.svg)](https://zenodo.org/badge/latestdoi/461224451)
+
 ![](https://www.4dbrix.com/products/train/rail-yard/rail-yard-left-4-tracks.png)
 
 ## About the plugin:
